@@ -9,10 +9,12 @@ import android.os.Build
 import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.lifecycle.LiveData
-import java.io.IOException
-import java.net.*
-import java.util.concurrent.*
-import javax.net.SocketFactory
+import java.net.InetAddress
+import java.net.UnknownHostException
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.TimeUnit
 
 
 /** check an Internet connection.
@@ -36,14 +38,13 @@ object CheckConnectivityModule {
             Log.d("CheckConnectivityModule", "hasConnection :  $it")
             hasConnection = it
             hasInternet = if (it) {
-                runCommand() && internetConnectionAvailable(1000)
+                googlePingTest() || internetConnectionAvailable(1000)
             } else {
                 false
             }
             Log.d("CheckConnectivityModule", "hasInternet :  $hasInternet")
         }
     }
-
 
     /**
      * This method return Internet connection state.
@@ -60,6 +61,7 @@ object CheckConnectivityModule {
                 ConnectivityState.NOINTERNET
         }
     }
+
 
     class ConnectionLiveData(val context: Context) : LiveData<Boolean>() {
 
@@ -130,7 +132,7 @@ object CheckConnectivityModule {
         }
     }
 
-    private fun runCommand(): Boolean {
+    private fun googlePingTest(): Boolean {
         val runtime = Runtime.getRuntime();
         return try {
             val mIpAddrProcess = runtime.exec("/system/bin/ping -c 1 8.8.8.8")
@@ -141,68 +143,8 @@ object CheckConnectivityModule {
         }
     }
 
-    fun isInternetAvailable(): Boolean {
-        return try {
-            val address: InetAddress = InetAddress.getByName("google.com")
-            //You can replace it with your name
-            !address.equals("")
-        } catch (e: java.lang.Exception) {
-            false
-        }
-    }
-
     enum class ConnectivityState {
         NOCONNECTION, HASINTERNET, NOINTERNET
-    }
-
-    private fun execute(socketFactory: SocketFactory): Boolean {
-        return try {
-            val socket = socketFactory.createSocket() ?: throw IOException("Socket is null.")
-            socket.connect(InetSocketAddress("8.8.8.8", 53), 1500)
-            socket.close()
-            true
-        } catch (e: IOException) {
-            false
-        }
-    }
-
-    @RequiresApi(Build.VERSION_CODES.M)
-    private fun checkHasInternet(context: Context): Boolean {
-        val connectivityManager =
-            context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        if (connectivityManager != null) {
-            val capabilities =
-                connectivityManager.getNetworkCapabilities(connectivityManager.activeNetwork)
-            if (capabilities != null) {
-                if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) {
-                    Log.i("Internet", "NetworkCapabilities.TRANSPORT_CELLULAR")
-                    return true
-                } else if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
-                    Log.i("Internet", "NetworkCapabilities.TRANSPORT_WIFI")
-                    return true
-                } else if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) {
-                    Log.i("Internet", "NetworkCapabilities.TRANSPORT_ETHERNET")
-                    return true
-                }
-            }
-        }
-        return false
-    }
-
-    fun isConnected(): Boolean {
-        return try {
-            val url = URL("http://www.google.com/")
-            val urlc: HttpURLConnection = url.openConnection() as HttpURLConnection
-            urlc.setRequestProperty("User-Agent", "test")
-            urlc.setRequestProperty("Connection", "close")
-            urlc.setConnectTimeout(1000) // mTimeout is in seconds
-            urlc.connect()
-            urlc.getResponseCode() === 200
-        } catch (e: IOException) {
-            Log.i("CheckConnectivityModule", "Error checking internet connection", e)
-            false
-        }
-
     }
 
     private fun internetConnectionAvailable(timeOut: Int): Boolean {
@@ -221,12 +163,9 @@ object CheckConnectivityModule {
             if (future != null) {
                 inetAddress = future.get(timeOut.toLong(), TimeUnit.MILLISECONDS)
             }
-            if (future != null) {
-                future.cancel(true)
-            }
-        } catch (e: InterruptedException) {
-        } catch (e: ExecutionException) {
-        } catch (e: TimeoutException) {
+            future?.cancel(true)
+        } catch (e: Exception) {
+            return true
         }
         return inetAddress != null && !inetAddress.equals("")
     }
